@@ -1,32 +1,62 @@
-import { describe, expect, it, vi } from 'vitest'
-import handler from '../../src/pages/api/time-logs/index'
-import type { NextApiRequest, NextApiResponse } from 'next'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { POST, GET } from '../../src/app/api/timelogs/route'
+import { Role } from '@prisma/client'
 
-vi.mock('next-auth', () => ({
-  getServerSession: vi.fn(() => ({ user: { id: 'dev', role: 'DEVELOPER' } })),
+const mockRequireAuth = vi.fn()
+const mockTimeLogCreate = vi.fn()
+const mockTimeLogFindMany = vi.fn()
+
+vi.mock('../../src/server/auth', () => ({
+  requireAuth: () => mockRequireAuth(),
 }))
-
-const createMock = vi.fn(async () => ({ id: 'log-1' }))
 
 vi.mock('../../src/lib/prisma', () => ({
   prisma: {
+    task: { findUnique: vi.fn() },
     timeLog: {
-      findMany: vi.fn(async () => []),
-      create: createMock,
+      create: (...args: any[]) => mockTimeLogCreate(...args),
+      findMany: (...args: any[]) => mockTimeLogFindMany(...args),
     },
   },
 }))
 
-describe('time log api', () => {
-  it('creates a time log', async () => {
-    const req = {
-      method: 'POST',
-      body: { projectId: 'project-1', minutes: 60, entryDate: new Date().toISOString() },
-    } as unknown as NextApiRequest
-    const status = vi.fn(() => ({ json: vi.fn() }))
-    const res = { status, setHeader: vi.fn() } as unknown as NextApiResponse
-    await handler(req, res)
-    expect(createMock).toHaveBeenCalled()
-    expect(status).toHaveBeenCalledWith(201)
+describe('timelog api', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('creates a time log for a project', async () => {
+    mockRequireAuth.mockResolvedValue({ userId: 'dev-1', role: Role.DEVELOPER })
+    mockTimeLogCreate.mockResolvedValue({ id: 'log-1' })
+
+    const response = await POST(
+      new Request('http://localhost/api/timelogs', {
+        method: 'POST',
+        body: JSON.stringify({ targetType: 'PROJECT', targetId: 'project-1', projectId: 'project-1', hours: 2, date: new Date().toISOString() }),
+      }) as any,
+    )
+
+    expect(response.status).toBe(201)
+    expect(mockTimeLogCreate).toHaveBeenCalled()
+  })
+
+  it('returns weekly rollup data', async () => {
+    mockRequireAuth.mockResolvedValue({ userId: 'admin', role: Role.ADMIN })
+    mockTimeLogFindMany.mockResolvedValue([
+      {
+        id: 'log-1',
+        memberId: 'dev-1',
+        date: new Date('2024-03-04T00:00:00Z'),
+        hours: 4,
+        member: { id: 'dev-1', name: 'Dev One', email: 'dev@example.com', capacityHrsPerWeek: 30 },
+      },
+    ])
+
+    const response = await GET(new Request('http://localhost/api/timelogs') as any)
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.weekly[0].hours).toBe(4)
+    expect(mockTimeLogFindMany).toHaveBeenCalled()
   })
 })

@@ -4,10 +4,9 @@ import { ReactNode } from 'react'
 const navItems = [
   { href: '/clients', label: 'Clients' },
   { href: '/projects', label: 'Projects' },
-  { href: '/team', label: 'Team Heatmap' },
+  { href: '/team/workload', label: 'Team Heatmap' },
   { href: '/chat', label: 'Chat' },
   { href: '/calendar', label: 'Calendar' },
-  { href: '/files', label: 'Files' },
 ]
 
 export function AppLayout({ children }: { children: ReactNode }) {

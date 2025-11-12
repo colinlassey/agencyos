@@ -1,150 +1,182 @@
-import { PrismaClient, Role, ClientStage, PriorityLevel, ProjectStage, TaskStatus, ReviewStatus } from '@prisma/client'
+import {
+  ChannelType,
+  ClientStage,
+  NotificationType,
+  PriorityLevel,
+  PrismaClient,
+  ProjectStage,
+  ReviewStatus,
+  Role,
+  TaskStatus,
+  TimeLogTargetType,
+} from '@prisma/client'
 
 const prisma = new PrismaClient()
 
 async function main() {
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@agencyos.test' },
-    update: {},
-    create: {
-      email: 'admin@agencyos.test',
-      name: 'Admin User',
-      role: Role.ADMIN,
-    },
-  })
-
-  const developer = await prisma.user.upsert({
-    where: { email: 'dev@agencyos.test' },
-    update: {},
-    create: {
-      email: 'dev@agencyos.test',
-      name: 'Dev User',
-      role: Role.DEVELOPER,
-    },
-  })
-
-  const clientContact = await prisma.user.upsert({
-    where: { email: 'client@brand.com' },
-    update: {},
-    create: {
-      email: 'client@brand.com',
-      name: 'Client Stakeholder',
-      role: Role.CLIENT,
-    },
-  })
+  const [admin, devA, devB, clientUser] = await Promise.all([
+    prisma.user.upsert({
+      where: { email: 'admin@agencyos.test' },
+      update: { capacityHrsPerWeek: 35 },
+      create: {
+        email: 'admin@agencyos.test',
+        name: 'Admin User',
+        role: Role.ADMIN,
+        capacityHrsPerWeek: 35,
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: 'dev.one@agencyos.test' },
+      update: { capacityHrsPerWeek: 32 },
+      create: {
+        email: 'dev.one@agencyos.test',
+        name: 'Dev One',
+        role: Role.DEVELOPER,
+        capacityHrsPerWeek: 32,
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: 'dev.two@agencyos.test' },
+      update: { capacityHrsPerWeek: 30 },
+      create: {
+        email: 'dev.two@agencyos.test',
+        name: 'Dev Two',
+        role: Role.DEVELOPER,
+        capacityHrsPerWeek: 30,
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: 'client@acme.test' },
+      update: {},
+      create: {
+        email: 'client@acme.test',
+        name: 'Acme Stakeholder',
+        role: Role.CLIENT,
+      },
+    }),
+  ])
 
   const client = await prisma.client.create({
     data: {
-      name: 'Acme Co',
+      name: 'Acme Corporation',
+      nameNormalized: 'acme corporation',
+      domain: 'acme.test',
       stage: ClientStage.ACTIVE,
       priority: PriorityLevel.HIGH,
-      primaryContact: 'Client Stakeholder',
-      dueDate: new Date(Date.now() + 14 * 24 * 3600 * 1000),
-      notes: 'High-touch ecommerce redesign.',
-      projects: {
-        create: {
-          name: 'Acme Website Redesign',
-          description: 'Full redesign for ecommerce storefront.',
-          dueDate: new Date(Date.now() + 21 * 24 * 3600 * 1000),
-          stage: ProjectStage.DESIGN,
-          priority: PriorityLevel.HIGH,
-          createdById: admin.id,
-          memberships: {
-            create: [
-              { userId: admin.id, role: Role.ADMIN },
-              { userId: developer.id, role: Role.DEVELOPER },
-            ],
-          },
-          tasks: {
-            create: [
-              {
-                title: 'Discovery workshop',
-                description: 'Conduct stakeholder interviews.',
-                status: TaskStatus.COMPLETE,
-                reviewStatus: ReviewStatus.APPROVED,
-                priority: PriorityLevel.MEDIUM,
-                estimateHours: 6,
-                dueDate: new Date(Date.now() - 5 * 24 * 3600 * 1000),
-                createdById: admin.id,
-                assignments: { create: [{ userId: admin.id }] },
-              },
-              {
-                title: 'Homepage wireframe',
-                status: TaskStatus.REVIEW,
-                reviewStatus: ReviewStatus.SUBMITTED,
-                priority: PriorityLevel.HIGH,
-                estimateHours: 8,
-                dueDate: new Date(Date.now() + 2 * 24 * 3600 * 1000),
-                createdById: developer.id,
-                assignments: { create: [{ userId: developer.id }] },
-              },
-              {
-                title: 'Design system tokens',
-                status: TaskStatus.IN_PROGRESS,
-                reviewStatus: ReviewStatus.DRAFT,
-                priority: PriorityLevel.CRITICAL,
-                estimateHours: 10,
-                dueDate: new Date(Date.now() + 1 * 24 * 3600 * 1000),
-                createdById: developer.id,
-                assignments: { create: [{ userId: developer.id }] },
-              },
-              {
-                title: 'Client feedback sync',
-                status: TaskStatus.BACKLOG,
-                reviewStatus: ReviewStatus.DRAFT,
-                priority: PriorityLevel.MEDIUM,
-                estimateHours: 2,
-                dueDate: new Date(Date.now() + 5 * 24 * 3600 * 1000),
-                createdById: admin.id,
-                assignments: { create: [{ userId: admin.id }] },
-              },
-              {
-                title: 'Accessibility audit',
-                status: TaskStatus.BLOCKED,
-                reviewStatus: ReviewStatus.DRAFT,
-                priority: PriorityLevel.HIGH,
-                estimateHours: 6,
-                dueDate: new Date(Date.now() + 6 * 24 * 3600 * 1000),
-                createdById: developer.id,
-                assignments: { create: [{ userId: developer.id }] },
-              },
-            ],
-          },
-        },
+      notes: 'Enterprise ecommerce redesign.',
+      contacts: {
+        create: { userId: clientUser.id },
       },
     },
-    include: { projects: true },
   })
 
-  const project = client.projects[0]
-
-  await prisma.reviewRequest.create({
+  const project = await prisma.project.create({
     data: {
-      targetType: 'TASK',
-      targetId: project.tasks[1].id,
-      status: ReviewStatus.SUBMITTED,
-      submittedById: developer.id,
-      notes: 'Ready for review by admin.',
+      name: 'Acme Storefront Refresh',
+      description: 'Modernize the Acme ecommerce experience across web and mobile.',
+      clientId: client.id,
+      stage: ProjectStage.DESIGN,
+      priority: PriorityLevel.HIGH,
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      memberships: {
+        create: [
+          { userId: admin.id, role: Role.ADMIN },
+          { userId: devA.id, role: Role.DEVELOPER },
+          { userId: devB.id, role: Role.DEVELOPER },
+        ],
+      },
+    },
+  })
+
+  const tasks = await Promise.all([
+    prisma.task.create({
+      data: {
+        title: 'Discovery workshop notes',
+        description: 'Summarize stakeholder findings.',
+        projectId: project.id,
+        status: TaskStatus.DONE,
+        priority: PriorityLevel.MEDIUM,
+        dueDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+        estimateHrs: 4,
+        assigneeIds: [admin.id],
+      },
+    }),
+    prisma.task.create({
+      data: {
+        title: 'Homepage wireframes',
+        description: 'Iterate on homepage hero concepts.',
+        projectId: project.id,
+        status: TaskStatus.REVIEW,
+        priority: PriorityLevel.HIGH,
+        dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+        estimateHrs: 6,
+        assigneeIds: [devA.id],
+      },
+    }),
+    prisma.task.create({
+      data: {
+        title: 'Component library tokens',
+        projectId: project.id,
+        status: TaskStatus.DOING,
+        priority: PriorityLevel.CRITICAL,
+        dueDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),
+        estimateHrs: 10,
+        assigneeIds: [devA.id, devB.id],
+      },
+    }),
+    prisma.task.create({
+      data: {
+        title: 'Checkout flow audit',
+        projectId: project.id,
+        status: TaskStatus.TODO,
+        priority: PriorityLevel.MEDIUM,
+        dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+        estimateHrs: 5,
+        assigneeIds: [devB.id],
+      },
+    }),
+    prisma.task.create({
+      data: {
+        title: 'Accessibility fixes',
+        projectId: project.id,
+        status: TaskStatus.BLOCKED,
+        priority: PriorityLevel.HIGH,
+        dueDate: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+        estimateHrs: 3,
+        assigneeIds: [devA.id],
+      },
+    }),
+  ])
+
+  const reviewSubmission = await prisma.reviewSubmission.create({
+    data: {
+      taskId: tasks[1].id,
+      status: ReviewStatus.PENDING,
+      submittedById: devA.id,
+      reviewerId: admin.id,
+      notes: 'Ready for design sign-off.',
     },
   })
 
   await prisma.feedback.createMany({
     data: [
       {
-        content: 'Looks great! Minor copy tweaks needed.',
+        content: 'Client requested tighter hero layout.',
         targetType: 'PROJECT',
         targetId: project.id,
-        visibleToClient: true,
+        isClientVisible: true,
         authorId: admin.id,
+        clientId: client.id,
         projectId: project.id,
       },
       {
-        content: 'Need to adjust color contrast for CTA.',
+        content: 'Confirm contrast ratios for CTA button.',
         targetType: 'TASK',
-        targetId: project.tasks[2].id,
-        visibleToClient: false,
-        authorId: developer.id,
-        taskId: project.tasks[2].id,
+        targetId: tasks[4].id,
+        isClientVisible: false,
+        authorId: devB.id,
+        projectId: project.id,
+        taskId: tasks[4].id,
       },
     ],
   })
@@ -152,78 +184,129 @@ async function main() {
   await prisma.timeLog.createMany({
     data: [
       {
-        userId: admin.id,
+        targetType: TimeLogTargetType.PROJECT,
+        targetId: project.id,
         projectId: project.id,
-        minutes: 180,
-        weekStart: new Date(),
-        entryDate: new Date(),
+        memberId: admin.id,
+        hours: 3,
+        date: new Date(),
       },
       {
-        userId: developer.id,
+        targetType: TimeLogTargetType.TASK,
+        targetId: tasks[2].id,
         projectId: project.id,
-        taskId: project.tasks[1].id,
-        minutes: 240,
-        weekStart: new Date(),
-        entryDate: new Date(),
+        taskId: tasks[2].id,
+        memberId: devA.id,
+        hours: 2.5,
+        date: new Date(),
+      },
+      {
+        targetType: TimeLogTargetType.TASK,
+        targetId: tasks[2].id,
+        projectId: project.id,
+        taskId: tasks[2].id,
+        memberId: devB.id,
+        hours: 2,
+        date: new Date(),
       },
     ],
   })
 
-  const generalThread = await prisma.chatThread.create({
+  const generalChannel = await prisma.channel.create({
     data: {
-      type: 'GENERAL',
+      type: ChannelType.GENERAL,
       name: 'General',
       participants: {
+        create: [admin, devA, devB, clientUser].map((user) => ({ userId: user.id })),
+      },
+      messages: {
         create: [
-          { userId: admin.id },
-          { userId: developer.id },
-          { userId: clientContact.id },
+          {
+            authorId: admin.id,
+            content: 'Welcome to AgencyOS – let’s build together!',
+          },
         ],
       },
     },
   })
 
-  await prisma.chatMessage.createMany({
+  await prisma.channel.create({
+    data: {
+      type: ChannelType.PROJECT,
+      name: 'Acme Project',
+      projectId: project.id,
+      participants: {
+        create: [admin, devA, devB].map((user) => ({ userId: user.id })),
+      },
+      messages: {
+        create: [
+          {
+            authorId: devA.id,
+            content: 'Wireframes uploaded for review.',
+          },
+          {
+            authorId: admin.id,
+            content: 'Review scheduled for tomorrow.',
+          },
+        ],
+      },
+    },
+  })
+
+  await prisma.channel.create({
+    data: {
+      type: ChannelType.DM,
+      name: '1:1 Admin & Dev',
+      participants: {
+        create: [admin, devB].map((user) => ({ userId: user.id })),
+      },
+      messages: {
+        create: [
+          {
+            authorId: devB.id,
+            content: 'Can we pair on the accessibility audit tomorrow?',
+          },
+        ],
+      },
+    },
+  })
+
+  await prisma.file.createMany({
     data: [
       {
-        threadId: generalThread.id,
-        authorId: admin.id,
-        content: 'Welcome to AgencyOS! 👋',
+        name: 'homepage-wireframe.pdf',
+        url: 'https://files.agencyos.test/homepage-wireframe.pdf',
+        mime: 'application/pdf',
+        size: 1024,
+        version: 1,
+        clientId: client.id,
+        projectId: project.id,
+        uploaderId: devA.id,
       },
       {
-        threadId: generalThread.id,
-        authorId: developer.id,
-        content: 'Starting on the wireframes today.',
+        name: 'brand-guidelines.pdf',
+        url: 'https://files.agencyos.test/brand-guidelines.pdf',
+        mime: 'application/pdf',
+        size: 2048,
+        version: 1,
+        clientId: client.id,
+        uploaderId: admin.id,
       },
     ],
   })
 
-  await prisma.fileObject.create({
-    data: {
-      key: 'acme/project/brief.pdf',
-      filename: 'Project Brief.pdf',
-      contentType: 'application/pdf',
-      size: 1024,
-      url: 'https://example.com/brief.pdf',
-      clientId: client.id,
-      projectId: project.id,
-      uploaderId: admin.id,
-    },
-  })
-
-  await prisma.calendarEvent.create({
-    data: {
-      projectId: project.id,
-      title: 'Acme Website Launch',
-      source: 'PROJECT_DUE_DATE',
-      scheduledFor: project.dueDate,
-    },
-  })
-
   await prisma.notification.createMany({
     data: [
-      { userId: developer.id, type: 'TASK_ASSIGNED', payload: { taskId: project.tasks[1].id } },
-      { userId: admin.id, type: 'REVIEW_STATUS', payload: { taskId: project.tasks[1].id, status: 'SUBMITTED' } },
+      {
+        type: NotificationType.REVIEW_STATUS,
+        userId: admin.id,
+        payload: { kind: 'review-request', reviewId: reviewSubmission.id, taskId: tasks[1].id },
+      },
+      {
+        type: NotificationType.MESSAGE,
+        userId: devA.id,
+        payload: { kind: 'channel-message', channelId: generalChannel.id },
+      },
     ],
   })
 }

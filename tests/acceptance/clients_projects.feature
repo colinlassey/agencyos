@@ -3,12 +3,12 @@ Feature: Manage clients and projects
   I want to create clients and projects with required fields
   So that work can be organized by account
 
-  Scenario: Create client with unique name
+  Scenario: Create client with normalized unique name
     Given an authenticated admin
-    When they submit the client form with name "Acme" stage "ACTIVE" priority "HIGH"
-    Then the client is stored with a due date and stage
+    When they submit the client form with name "Acme" and domain "acme.test"
+    Then the client is stored with a normalized name and contact access for the submitter
 
-  Scenario: Create project with due date and assignees
+  Scenario: Create project with due date and membership
     Given an authenticated admin with client "Acme"
-    When they submit the project form with due date and developer assignee
+    When they submit the project form with stage "DESIGN" priority "HIGH" and a due date next week
     Then the project is created with due date, stage, priority, and membership records

@@ -1,0 +1,346 @@
+// Prisma schema for AgencyOS MVP
+// PostgreSQL provider
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  DEVELOPER
+  CLIENT
+}
+
+enum ClientStage {
+  LEAD
+  ONBOARDING
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum PriorityLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ProjectStage {
+  DISCOVERY
+  DESIGN
+  BUILD
+  QA
+  LAUNCH
+  MAINTENANCE
+}
+
+enum TaskStatus {
+  BACKLOG
+  IN_PROGRESS
+  REVIEW
+  BLOCKED
+  COMPLETE
+  ARCHIVED
+}
+
+enum ReviewStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+enum FeedbackTargetType {
+  PROJECT
+  TASK
+}
+
+enum ThreadType {
+  GENERAL
+  PROJECT
+  DIRECT
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_UPDATED
+  REVIEW_STATUS
+  MESSAGE
+  FILE_ADDED
+}
+
+enum CalendarSource {
+  PROJECT_DUE_DATE
+  PROJECT_MILESTONE
+}
+
+model User {
+  id            String              @id @default(cuid())
+  email         String              @unique
+  name          String
+  role          Role
+  avatarUrl     String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  memberships   ProjectMembership[]
+  taskAssignments TaskAssignment[]
+  timeLogs      TimeLog[]
+  feedback      Feedback[]          @relation("FeedbackAuthor")
+  reviewRequests ReviewRequest[]    @relation("ReviewRequester")
+  reviewDecisions ReviewRequest[]   @relation("ReviewReviewer")
+  messages      ChatMessage[]
+  threads       ChatThreadParticipant[]
+  files         FileObject[]
+  notifications Notification[]
+  integrations  IntegrationAccount[]
+}
+
+model Client {
+  id          String       @id @default(cuid())
+  name        String
+  stage       ClientStage
+  priority    PriorityLevel
+  primaryContact String?
+  dueDate     DateTime?
+  notes       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+  projects    Project[]
+  files       FileObject[]
+  feedback    Feedback[]   @relation("ClientFeedback")
+
+  @@unique([name], map: "unique_client_name")
+  @@index([stage, priority])
+}
+
+model Project {
+  id             String            @id @default(cuid())
+  name           String
+  description    String?
+  dueDate        DateTime
+  stage          ProjectStage
+  priority       PriorityLevel
+  client         Client            @relation(fields: [clientId], references: [id])
+  clientId       String
+  createdBy      User              @relation(fields: [createdById], references: [id])
+  createdById    String
+  deletedAt      DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  tasks          Task[]
+  memberships    ProjectMembership[]
+  feedback       Feedback[]
+  reviewRequests ReviewRequest[]
+  timeLogs       TimeLog[]
+  files          FileObject[]
+  chatThread     ChatThread?
+  calendarEvents CalendarEvent[]
+
+  @@index([clientId, stage])
+  @@index([dueDate])
+}
+
+model ProjectMembership {
+  id        String   @id @default(cuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  role      Role
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId], map: "unique_project_member")
+}
+
+model Task {
+  id            String          @id @default(cuid())
+  title         String
+  description   String?
+  status        TaskStatus      @default(BACKLOG)
+  reviewStatus  ReviewStatus    @default(DRAFT)
+  priority      PriorityLevel   @default(MEDIUM)
+  estimateHours Float
+  dueDate       DateTime
+  submittedAt   DateTime?
+  project       Project         @relation(fields: [projectId], references: [id])
+  projectId     String
+  createdBy     User            @relation(fields: [createdById], references: [id])
+  createdById   String
+  deletedAt     DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  assignments   TaskAssignment[]
+  feedback      Feedback[]
+  reviewRequests ReviewRequest[]
+  timeLogs      TimeLog[]
+
+  @@index([projectId, status])
+  @@index([dueDate])
+}
+
+model TaskAssignment {
+  id        String   @id @default(cuid())
+  task      Task     @relation(fields: [taskId], references: [id])
+  taskId    String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  assignedAt DateTime @default(now())
+
+  @@unique([taskId, userId], map: "unique_task_assignment")
+}
+
+model Feedback {
+  id            String             @id @default(cuid())
+  content       String
+  targetType    FeedbackTargetType
+  targetId      String
+  visibleToClient Boolean          @default(false)
+  client        Client?            @relation("ClientFeedback", fields: [clientId], references: [id])
+  clientId      String?
+  project       Project?           @relation(fields: [projectId], references: [id])
+  projectId     String?
+  task          Task?              @relation(fields: [taskId], references: [id])
+  taskId        String?
+  author        User               @relation("FeedbackAuthor", fields: [authorId], references: [id])
+  authorId      String
+  createdAt     DateTime           @default(now())
+
+  @@index([targetType, targetId])
+}
+
+model ReviewRequest {
+  id            String        @id @default(cuid())
+  targetType    FeedbackTargetType
+  targetId      String
+  status        ReviewStatus  @default(SUBMITTED)
+  submittedBy   User          @relation("ReviewRequester", fields: [submittedById], references: [id])
+  submittedById String
+  reviewer      User?         @relation("ReviewReviewer", fields: [reviewerId], references: [id])
+  reviewerId    String?
+  notes         String?
+  respondedAt   DateTime?
+  createdAt     DateTime      @default(now())
+
+  @@index([targetType, targetId])
+}
+
+model ChatThread {
+  id            String                   @id @default(cuid())
+  type          ThreadType
+  name          String?
+  project       Project?                 @relation(fields: [projectId], references: [id])
+  projectId     String?
+  participants  ChatThreadParticipant[]
+  messages      ChatMessage[]
+  createdAt     DateTime                 @default(now())
+
+  @@index([type, projectId])
+}
+
+model ChatThreadParticipant {
+  id        String      @id @default(cuid())
+  thread    ChatThread  @relation(fields: [threadId], references: [id])
+  threadId  String
+  user      User        @relation(fields: [userId], references: [id])
+  userId    String
+  joinedAt  DateTime    @default(now())
+
+  @@unique([threadId, userId], map: "unique_thread_participant")
+}
+
+model ChatMessage {
+  id         String      @id @default(cuid())
+  thread     ChatThread  @relation(fields: [threadId], references: [id])
+  threadId   String
+  author     User        @relation(fields: [authorId], references: [id])
+  authorId   String
+  content    String
+  createdAt  DateTime    @default(now())
+
+  @@index([threadId, createdAt])
+}
+
+model TimeLog {
+  id         String    @id @default(cuid())
+  user       User      @relation(fields: [userId], references: [id])
+  userId     String
+  project    Project   @relation(fields: [projectId], references: [id])
+  projectId  String
+  task       Task?     @relation(fields: [taskId], references: [id])
+  taskId     String?
+  minutes    Int
+  entryDate  DateTime  @default(now())
+  weekStart  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, weekStart])
+}
+
+model FileObject {
+  id           String    @id @default(cuid())
+  key          String
+  filename     String
+  contentType  String
+  size         Int
+  url          String
+  client       Client?   @relation(fields: [clientId], references: [id])
+  clientId     String?
+  project      Project?  @relation(fields: [projectId], references: [id])
+  projectId    String?
+  uploader     User      @relation(fields: [uploaderId], references: [id])
+  uploaderId   String
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([clientId, projectId])
+}
+
+model Notification {
+  id         String            @id @default(cuid())
+  type       NotificationType
+  user       User              @relation(fields: [userId], references: [id])
+  userId     String
+  payload    Json
+  readAt     DateTime?
+  createdAt  DateTime          @default(now())
+
+  @@index([userId, readAt])
+}
+
+model CalendarEvent {
+  id             String          @id @default(cuid())
+  project        Project         @relation(fields: [projectId], references: [id])
+  projectId      String
+  title          String
+  source         CalendarSource
+  scheduledFor   DateTime
+  pushedToGoogle Boolean         @default(false)
+  googleEventId  String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([projectId, scheduledFor])
+}
+
+model IntegrationAccount {
+  id              String   @id @default(cuid())
+  provider        String
+  user            User     @relation(fields: [userId], references: [id])
+  userId          String
+  accessToken     String
+  refreshToken    String?
+  expiresAt       DateTime?
+  scope           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([provider, userId])
+}
+
